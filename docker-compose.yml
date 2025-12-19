@@ -1,0 +1,20 @@
+services:
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: asset-tracker-api
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - TZ=America/Sao_Paulo
+    volumes:
+      - ./src:/app/src
+      - /app/node_modules
+      - /app/dist
+    env_file:
+      - .env
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
