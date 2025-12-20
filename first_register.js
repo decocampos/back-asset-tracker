@@ -2,7 +2,7 @@
 const url = 'http://localhost:3000/api/auth/register';
 
 const dados = {
-  email: "andrecamposlu@gmail.com",
+  email: "avcl@cin.ufpe.br",
   password: "senha123",
   fullName: "Andre Campos",
   birthDate: "1999-10-20",
