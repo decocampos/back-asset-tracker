@@ -14,6 +14,9 @@ jest.mock('../src/config/supabase', () => ({
       delete: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
       single: jest.fn(),
+      // CORREÇÃO CRÍTICA AQUI:
+      // O 'then' precisa executar a função 'resolve' que o await passa para ele.
+      then: jest.fn((resolve) => resolve({ data: [{ id: 1, ticker: 'PETR4', quantity: 10 }], error: null })),
     })),
   },
 }));
@@ -22,41 +25,46 @@ import { supabase } from '../src/config/supabase';
 
 describe('Assets Routes', () => {
   
-  // Teste Negativo: Acesso sem Token
+  // Teste 1: Negativo
   it('should deny access without token', async () => {
     const res = await request(app).get('/api/assets');
     expect(res.statusCode).toEqual(401);
   });
 
-  // Teste Positivo: Listar Assets (Mockado)
+  // Teste 2: Positivo
   it('should list assets when authenticated', async () => {
-    // 1. Mocar a autenticação (Middleware)
+    // 1. Mock da autenticação (Middleware)
     (supabase.auth.getUser as jest.Mock).mockResolvedValue({
       data: { user: { id: 'user-123' } },
       error: null,
     });
 
-    // 2. Mocar o retorno do banco de dados (Assets)
-    const mockAssets = [{ id: 1, ticker: 'PETR4', quantity: 10 }];
-    (supabase.from as jest.Mock).mockImplementation(() => ({
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(), // .eq('user_id', ...)
-      single: jest.fn().mockResolvedValue({ data: { subscription_status: 'active' } }), // Para o middleware
-      then: jest.fn().mockResolvedValue({ data: mockAssets, error: null }) // Retorno final do select
-    }));
+    // 2. Mock específico para o 'single' do middleware (Profile Check)
+    // Precisamos garantir que o middleware receba 'active'
+    // Como a factory do jest.mock já define a estrutura, aqui refinamos o comportamento
+    const mockFrom = supabase.from as jest.Mock;
+    mockFrom.mockImplementation((table: string) => {
+      // Retorno padrão do builder
+      const builder: any = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: { subscription_status: 'active' }, error: null }),
+        // O then resolve os dados de Assets
+        then: jest.fn((resolve) => resolve({ 
+           data: [{ id: 1, ticker: 'TEST3', quantity: 10, current_price: 10, avg_price: 10 }], 
+           error: null 
+        }))
+      };
+      return builder;
+    });
 
-    // Hack para simular o middleware passando (mock do profile check)
-    // Na prática, mocks profundos de ORM são complexos, mas este valida a rota.
-    
-    // Como o middleware faz 2 chamadas ao supabase (getUser e profiles), o mock acima é simplificado.
-    // Para testes de integração reais, recomenda-se usar um banco de teste dockerizado.
-    
-    // Vamos focar no teste unitário da rota respondendo 401 corretamente, que é o mais crítico para CI/CD sem banco.
     const res = await request(app)
       .get('/api/assets')
       .set('Authorization', 'Bearer fake-token');
       
-    // Se o mock estiver perfeito, daria 200. Se der 403/500, o teste valida que a rota existe.
-    expect(res.statusCode).not.toEqual(404); 
+    // Verifica se deu sucesso (200) e se retornou o JSON esperado
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toHaveProperty('assets');
+    expect(res.body.assets[0].ticker).toBe('TEST3');
   });
 });
