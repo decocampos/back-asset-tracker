@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { AuthController } from './auth.controller';
+import { ensureAuthenticated } from '../../middlewares/auth.middleware';
 
 const router = Router();
 
@@ -152,5 +153,33 @@ router.post('/login', AuthController.login);
  *         description: Refresh token inválido ou expirado
  */
 router.post('/refresh', AuthController.refreshToken);
+
+/**
+ * @swagger
+ * /api/auth/profile:
+ *   put:
+ *     summary: Atualiza dados do perfil do usuário
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               birthDate:
+ *                 type: string
+ *                 format: date
+ *     responses:
+ *       200:
+ *         description: Perfil atualizado
+ */
+router.put('/profile', ensureAuthenticated, AuthController.updateProfile);
+
 
 export default router;

@@ -1,0 +1,35 @@
+name: CI - Backend Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run Unit Tests
+      run: npm test
+      env:
+        # Mock de variáveis de ambiente para o teste não quebrar
+        SUPABASE_URL: "https://fake.supabase.co"
+        SUPABASE_KEY: "fake-key"
+        PORT: 3000

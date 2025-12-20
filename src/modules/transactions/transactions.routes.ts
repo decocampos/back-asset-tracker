@@ -16,6 +16,49 @@ router.use(ensureAuthenticated);
 /**
  * @swagger
  * /api/transactions:
+ *   get:
+ *     summary: Lista histórico de transações com filtro de data
+ *     tags: [Transactions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Data inicial (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Data final (YYYY-MM-DD)
+ *     responses:
+ *       200:
+ *         description: Histórico retornado com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                   type:
+ *                     type: string
+ *                   value:
+ *                     type: number
+ *                   quantity:
+ *                     type: number
+ *                   transaction_date:
+ *                     type: string
+ *                   asset:
+ *                     type: object
+ *                     properties:
+ *                       ticker:
+ *                         type: string
  *   post:
  *     summary: Registra uma nova transação (Compra/Venda)
  *     tags: [Transactions]
@@ -55,6 +98,7 @@ router.use(ensureAuthenticated);
  *       201:
  *         description: Transação registrada e PM atualizado
  */
+router.get('/', TransactionsController.list);
 router.post('/', TransactionsController.create);
 
 /**
@@ -89,5 +133,25 @@ router.post('/', TransactionsController.create);
  *         description: Processamento em lote concluído
  */
 router.post('/bulk', TransactionsController.bulkCreate);
+
+/**
+ * @swagger
+ * /api/transactions/{id}:
+ *   delete:
+ *     summary: Remove uma transação (Estorno)
+ *     tags: [Transactions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Removido com sucesso
+ */
+router.delete('/:id', TransactionsController.delete);
 
 export default router;

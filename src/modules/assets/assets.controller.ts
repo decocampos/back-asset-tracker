@@ -8,6 +8,7 @@ const assetSchema = z.object({
   ticker: z.string().min(1),
   name: z.string().optional(),
   type: z.string().default('Ação'),
+  sector: z.string().optional(), // <--- ADICIONADO AQUI
   currency: z.string().default('BRL'),
   quantity: z.number().default(0),
   avg_price: z.number().default(0),
@@ -27,8 +28,6 @@ export class AssetsController {
 
       if (error) throw error;
 
-      // Cálculo do total consolidado (Qtd * Preço Atual)
-      // Nota: Se current_price for 0 (sem cotação), usa o avg_price como fallback visual
       const totalValue = data.reduce((acc, curr) => {
         const price = curr.current_price > 0 ? curr.current_price : curr.avg_price;
         return acc + (curr.quantity * price);
@@ -44,7 +43,7 @@ export class AssetsController {
     }
   }
 
-  // POST /assets (Rota Individual)
+  // POST /assets (Individual)
   static async create(req: Request, res: Response) {
     try {
       const data = assetSchema.parse(req.body);
@@ -54,7 +53,7 @@ export class AssetsController {
         .insert({
           ...data,
           user_id: req.user.id,
-          current_price: data.avg_price // Inicia com o preço pago
+          current_price: data.avg_price 
         })
         .select()
         .single();
@@ -76,7 +75,7 @@ export class AssetsController {
         .from('assets')
         .delete()
         .eq('id', id)
-        .eq('user_id', req.user.id); // Garante que só deleta o seu
+        .eq('user_id', req.user.id);
 
       if (error) throw error;
 
@@ -109,6 +108,33 @@ export class AssetsController {
 
     } catch (error: any) {
       return res.status(400).json({ error: error.errors || error.message });
+    }
+  }
+
+  // PUT /assets/:id
+  static async update(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { ticker, type, sector } = req.body; // Permite editar apenas metadados
+
+      const { data, error } = await supabase
+        .from('assets')
+        .update({
+          ticker, 
+          type, 
+          sector,
+          updated_at: new Date()
+        })
+        .eq('id', id)
+        .eq('user_id', req.user.id) // Segurança RLS
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return res.json(data);
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
     }
   }
 }

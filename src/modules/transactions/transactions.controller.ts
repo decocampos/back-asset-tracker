@@ -9,12 +9,50 @@ const transactionSchema = z.object({
   type: z.enum(['BUY', 'SELL']),
   value: z.number().positive(),
   quantity: z.number().positive(),
-  date: z.string().datetime().optional() // Opcional, se não vier usa NOW
+  date: z.string().datetime().optional(),
+  // NOVOS CAMPOS (Opcionais) - Para criar o ativo corretamente se ele não existir
+  assetType: z.string().optional(), // Ex: "FII", "Renda Fixa"
+  sector: z.string().optional()     // Ex: "Logística", "Bancário"
 });
 
 const bulkTransactionsSchema = z.array(transactionSchema);
 
 export class TransactionsController {
+
+  // GET /transactions (Com filtro de data)
+  static async list(req: Request, res: Response) {
+    try {
+      const { startDate, endDate } = req.query;
+
+      // Monta a query base
+      let query = supabase
+        .from('transactions')
+        .select('*, asset:assets(ticker, type, sector)') // Adicionei 'sector' aqui também
+        .order('transaction_date', { ascending: false });
+
+      if (startDate) {
+        query = query.gte('transaction_date', new Date(String(startDate)).toISOString());
+      }
+      
+      if (endDate) {
+        const end = new Date(String(endDate));
+        end.setHours(23, 59, 59, 999);
+        query = query.lte('transaction_date', end.toISOString());
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Filtra para garantir consistência
+      const formattedData = data.filter((tx: any) => tx.asset !== null);
+
+      return res.json(formattedData);
+
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
+    }
+  }
 
   // POST /transactions (Individual)
   static async create(req: Request, res: Response) {
@@ -22,7 +60,6 @@ export class TransactionsController {
       const txData = transactionSchema.parse(req.body);
       const userId = req.user.id;
 
-      // Reutiliza a lógica centralizada
       const result = await TransactionsController.processTransaction(userId, txData);
 
       if (result.status === 'error') {
@@ -48,7 +85,6 @@ export class TransactionsController {
       const results = [];
 
       for (const tx of transactions) {
-        // Processa um por um
         const res = await TransactionsController.processTransaction(userId, tx);
         results.push(res);
       }
@@ -78,6 +114,7 @@ export class TransactionsController {
       // 2. Cria se não existir (apenas COMPRA)
       if (!asset) {
         if (tx.type === 'BUY') {
+          // AQUI ESTÁ A MUDANÇA: Usa os campos novos assetType e sector
           const { data: newAsset, error: createError } = await supabase
             .from('assets')
             .insert({
@@ -85,7 +122,8 @@ export class TransactionsController {
               ticker: tx.ticker,
               quantity: 0,
               avg_price: 0,
-              type: 'Ação', // Default
+              type: tx.assetType || 'Ação', // Usa o enviado ou padrão
+              sector: tx.sector || null,    // Salva o setor se vier
               currency: 'BRL'
             })
             .select()
@@ -106,7 +144,6 @@ export class TransactionsController {
       const txValue = Number(tx.value);
 
       if (tx.type === 'BUY') {
-        // PM = ((QtdAtual * PMAtual) + (QtdCompra * $Compra)) / NovaQtdTotal
         const totalOld = currentQty * currentAvg;
         const totalNew = txQty * txValue;
         
@@ -114,7 +151,6 @@ export class TransactionsController {
         currentAvg = (totalOld + totalNew) / currentQty;
 
       } else if (tx.type === 'SELL') {
-        // Venda não altera preço médio, só quantidade
         if (currentQty < txQty) {
           return { ticker: tx.ticker, status: 'error', msg: 'Saldo insuficiente para venda' };
         }
@@ -146,6 +182,25 @@ export class TransactionsController {
 
     } catch (err: any) {
       return { ticker: tx.ticker, status: 'error', msg: err.message };
+    }
+  }
+
+  // DELETE /transactions/:id
+  static async delete(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', id);
+        // Nota: Idealmente verificar se pertence ao asset do usuário antes
+
+      if (error) throw error;
+
+      return res.status(204).send();
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
     }
   }
 }

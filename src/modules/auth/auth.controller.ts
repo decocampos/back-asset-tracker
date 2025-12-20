@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { supabase } from '../../config/supabase';
 import { registerSchema, loginSchema, refreshTokenSchema } from './auth.schema';
 import logger from '../../core/logger';
+import { z } from 'zod';
 
 export class AuthController {
   
@@ -128,6 +129,48 @@ export class AuthController {
     } catch (error: any) {
       logger.error(`Erro no Refresh Token: ${error.message}`);
       return res.status(401).json({ error: "Token inválido ou expirado." });
+    }
+  }
+
+  // PUT /auth/profile - Atualizar dados cadastrais
+  static async updateProfile(req: Request, res: Response) {
+    try {
+      // Schema simples para atualização
+      const updateSchema = z.object({
+        fullName: z.string().min(3).optional(),
+        phone: z.string().optional(),
+        birthDate: z.string().optional(),
+      });
+
+      const data = updateSchema.parse(req.body);
+      const userId = req.user.id;
+
+      // Atualiza no Supabase Auth (Opcional, se quiser manter sincronizado)
+      if (data.fullName) {
+        await supabase.auth.updateUser({
+          data: { full_name: data.fullName }
+        });
+      }
+
+      // Atualiza na tabela Profiles
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: data.fullName,
+          phone: data.phone,
+          birth_date: data.birthDate ? new Date(data.birthDate) : undefined,
+          updated_at: new Date()
+        })
+        .eq('id', userId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return res.json({ message: 'Perfil atualizado', profile });
+
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
     }
   }
 }

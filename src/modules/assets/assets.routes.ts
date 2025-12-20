@@ -136,4 +136,34 @@ router.post('/bulk', AssetsController.bulkCreate);
  */
 router.delete('/:id', AssetsController.delete);
 
+/**
+ * @swagger
+ * /api/assets/{id}:
+ *   put:
+ *     summary: Atualiza dados de um ativo (Ticker, Setor)
+ *     tags: [Assets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ticker:
+ *                 type: string
+ *               sector:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Atualizado com sucesso
+ */
+router.put('/:id', AssetsController.update);
+
 export default router;
