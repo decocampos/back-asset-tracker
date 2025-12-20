@@ -53,6 +53,15 @@ const router = Router();
  *           type: string
  *           format: password
  *           example: 123456
+ *     RefreshToken:
+ *       type: object
+ *       required:
+ *         - refreshToken
+ *       properties:
+ *         refreshToken:
+ *           type: string
+ *           description: Token de atualização recebido no login
+ *           example: "rO0ABXNyABFqYXZ..."
  */
 
 /**
@@ -114,5 +123,34 @@ router.post('/register', AuthController.register);
  *         description: Credenciais inválidas
  */
 router.post('/login', AuthController.login);
+
+/**
+ * @swagger
+ * /api/auth/refresh:
+ *   post:
+ *     summary: Renova o Access Token usando o Refresh Token
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/RefreshToken'
+ *     responses:
+ *       200:
+ *         description: Sessão renovada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 session:
+ *                   type: object
+ *                   description: Nova sessão com novos tokens
+ *       401:
+ *         description: Refresh token inválido ou expirado
+ */
+router.post('/refresh', AuthController.refreshToken);
 
 export default router;

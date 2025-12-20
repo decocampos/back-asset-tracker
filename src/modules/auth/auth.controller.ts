@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { supabase } from '../../config/supabase';
-import { registerSchema, loginSchema } from './auth.schema';
+import { registerSchema, loginSchema, refreshTokenSchema } from './auth.schema';
 import logger from '../../core/logger';
 
 export class AuthController {
@@ -12,7 +12,6 @@ export class AuthController {
       const data = registerSchema.parse(req.body);
       
       // 2. Criar Usuário no Auth do Supabase
-      // Passamos o full_name nos metadados para a Trigger do SQL usar
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
@@ -26,21 +25,16 @@ export class AuthController {
       if (authError) throw authError;
       if (!authData.user) throw new Error("Erro ao criar usuário no Auth");
 
-      // 3. Gerar código de indicação único (Mock simples)
+      // 3. Gerar código de indicação único
       const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-      // 4. Lógica de Pagamento (Toggle via ENV)
+      // 4. Lógica de Pagamento
       let paymentLink = null;
       let initialStatus = 'inactive';
-
-      // Se ENABLE_PAYMENTS for falso (ou não existir), assumimos Modo Dev (active)
-      // Se for string "true", ativamos o fluxo do Stripe
       const isPaymentEnabled = process.env.ENABLE_PAYMENTS === 'true';
 
       if (isPaymentEnabled) {
-        // Lógica Real do Stripe (Mockada por enquanto)
-        // paymentLink = await stripe.checkout.sessions.create(...)
-        paymentLink = "https://buy.stripe.com/test_link_plano_15"; // Link fictício
+        paymentLink = "https://buy.stripe.com/test_link_plano_15"; 
         initialStatus = 'inactive';
       } else {
         logger.info('⚠️ Pagamentos desativados (Modo Dev). Usuário criado como active.');
@@ -48,25 +42,21 @@ export class AuthController {
       }
 
       // 5. Atualizar a tabela Profiles (UPSERT)
-      // Usamos upsert porque a Trigger do banco já pode ter criado a linha com o ID e Nome.
-      // Aqui completamos com Telefone, Data de Nascimento e Código.
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert({
           id: authData.user.id,
-          full_name: data.fullName, // Garante que atualiza se a trigger falhar
+          full_name: data.fullName,
           phone: data.phone,
-          birth_date: new Date(data.birthDate),
+          // CORREÇÃO AQUI: Verifica se existe data antes de converter
+          birth_date: data.birthDate ? new Date(data.birthDate) : null,
           referral_code: myReferralCode,
           subscription_status: initialStatus,
-          // referred_by: logica_de_busca_do_codigo_aqui
         })
         .select();
 
       if (profileError) {
         logger.error(`Erro ao atualizar profile: ${profileError.message}`);
-        // Nota: O usuário Auth foi criado, mas o perfil falhou. 
-        // Em prod, faríamos um rollback (delete user) ou fila de retry.
         return res.status(500).json({ error: "Erro ao configurar perfil do usuário" });
       }
 
@@ -102,7 +92,6 @@ export class AuthController {
 
       if (error) throw error;
 
-      // Verificar status da assinatura no banco
       const { data: profile } = await supabase
         .from('profiles')
         .select('subscription_status')
@@ -119,6 +108,26 @@ export class AuthController {
     } catch (error: any) {
       logger.error(`Erro no Login: ${error.message}`);
       return res.status(401).json({ error: "Credenciais inválidas ou usuário não encontrado." });
+    }
+  }
+
+  // POST /auth/refresh
+  static async refreshToken(req: Request, res: Response) {
+    try {
+      const { refreshToken } = refreshTokenSchema.parse(req.body);
+
+      const { data, error } = await supabase.auth.refreshSession({
+        refresh_token: refreshToken,
+      });
+
+      if (error) throw error;
+      if (!data.session) throw new Error("Não foi possível renovar a sessão");
+
+      return res.json({ session: data.session });
+
+    } catch (error: any) {
+      logger.error(`Erro no Refresh Token: ${error.message}`);
+      return res.status(401).json({ error: "Token inválido ou expirado." });
     }
   }
 }
