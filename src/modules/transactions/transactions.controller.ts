@@ -10,24 +10,22 @@ const transactionSchema = z.object({
   value: z.number().positive(),
   quantity: z.number().positive(),
   date: z.string().datetime().optional(),
-  // NOVOS CAMPOS (Opcionais) - Para criar o ativo corretamente se ele não existir
-  assetType: z.string().optional(), // Ex: "FII", "Renda Fixa"
-  sector: z.string().optional()     // Ex: "Logística", "Bancário"
+  assetType: z.string().optional(),
+  sector: z.string().optional()
 });
 
 const bulkTransactionsSchema = z.array(transactionSchema);
 
 export class TransactionsController {
 
-  // GET /transactions (Com filtro de data)
+  // GET /transactions (Com filtro de data e limite)
   static async list(req: Request, res: Response) {
     try {
-      const { startDate, endDate } = req.query;
+      const { startDate, endDate, limit } = req.query; // <--- ADICIONADO LIMIT
 
-      // Monta a query base
       let query = supabase
         .from('transactions')
-        .select('*, asset:assets(ticker, type, sector)') // Adicionei 'sector' aqui também
+        .select('*, asset:assets(ticker, type, sector)')
         .order('transaction_date', { ascending: false });
 
       if (startDate) {
@@ -38,6 +36,11 @@ export class TransactionsController {
         const end = new Date(String(endDate));
         end.setHours(23, 59, 59, 999);
         query = query.lte('transaction_date', end.toISOString());
+      }
+
+      // <--- ADICIONADO LIMIT
+      if (limit) {
+        query = query.limit(Number(limit));
       }
 
       const { data, error } = await query;
@@ -100,10 +103,21 @@ export class TransactionsController {
     }
   }
 
+  // DELETE /transactions/:id
+  static async delete(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { error } = await supabase.from('transactions').delete().eq('id', id);
+      if (error) throw error;
+      return res.status(204).send();
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
+    }
+  }
+
   // --- Lógica de Negócio Centralizada ---
   private static async processTransaction(userId: string, tx: any) {
     try {
-      // 1. Busca o Ativo pelo Ticker
       let { data: asset } = await supabase
         .from('assets')
         .select('*')
@@ -111,10 +125,8 @@ export class TransactionsController {
         .eq('ticker', tx.ticker)
         .single();
 
-      // 2. Cria se não existir (apenas COMPRA)
       if (!asset) {
         if (tx.type === 'BUY') {
-          // AQUI ESTÁ A MUDANÇA: Usa os campos novos assetType e sector
           const { data: newAsset, error: createError } = await supabase
             .from('assets')
             .insert({
@@ -122,8 +134,8 @@ export class TransactionsController {
               ticker: tx.ticker,
               quantity: 0,
               avg_price: 0,
-              type: tx.assetType || 'Ação', // Usa o enviado ou padrão
-              sector: tx.sector || null,    // Salva o setor se vier
+              type: tx.assetType || 'Ação',
+              sector: tx.sector || null,
               currency: 'BRL'
             })
             .select()
@@ -136,20 +148,16 @@ export class TransactionsController {
         }
       }
 
-      // 3. Cálculo Matemático (Preço Médio)
       let currentQty = Number(asset.quantity);
       let currentAvg = Number(asset.avg_price);
-      
       const txQty = Number(tx.quantity);
       const txValue = Number(tx.value);
 
       if (tx.type === 'BUY') {
         const totalOld = currentQty * currentAvg;
         const totalNew = txQty * txValue;
-        
         currentQty += txQty;
         currentAvg = (totalOld + totalNew) / currentQty;
-
       } else if (tx.type === 'SELL') {
         if (currentQty < txQty) {
           return { ticker: tx.ticker, status: 'error', msg: 'Saldo insuficiente para venda' };
@@ -157,7 +165,6 @@ export class TransactionsController {
         currentQty -= txQty;
       }
 
-      // 4. Atualiza Ativo no Banco
       const { error: updateError } = await supabase
         .from('assets')
         .update({
@@ -169,7 +176,6 @@ export class TransactionsController {
 
       if (updateError) throw new Error(updateError.message);
 
-      // 5. Salva Histórico da Transação
       await supabase.from('transactions').insert({
         asset_id: asset.id,
         type: tx.type,
@@ -182,25 +188,6 @@ export class TransactionsController {
 
     } catch (err: any) {
       return { ticker: tx.ticker, status: 'error', msg: err.message };
-    }
-  }
-
-  // DELETE /transactions/:id
-  static async delete(req: Request, res: Response) {
-    try {
-      const { id } = req.params;
-
-      const { error } = await supabase
-        .from('transactions')
-        .delete()
-        .eq('id', id);
-        // Nota: Idealmente verificar se pertence ao asset do usuário antes
-
-      if (error) throw error;
-
-      return res.status(204).send();
-    } catch (error: any) {
-      return res.status(400).json({ error: error.message });
     }
   }
 }
