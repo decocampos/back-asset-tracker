@@ -1,4 +1,3 @@
-# Single stage for development
 FROM node:20-alpine
 
 WORKDIR /app
@@ -12,10 +11,12 @@ RUN npm install
 # Copy the rest of the application
 COPY . .
 
-# Build removido para DEV -> Ganhamos tempo de startup
+# ADICIONADO: Build necessário para produção (gera a pasta dist)
+# Isso faz o app gastar muito menos memória RAM
+RUN npm run build
 
 # Expose the application port
 EXPOSE 3000
 
-# Use the dev script from package.json
-CMD ["npm", "run", "dev"]
+# ALTERADO: Usa o comando de produção definido no package.json
+CMD ["npm", "start"]
